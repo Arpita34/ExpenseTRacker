@@ -1,4 +1,5 @@
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/expenses';
+const API_BASE =
+  (import.meta.env.VITE_API_URL || 'http://localhost:3001') + '/expenses';
 
 export const fetchExpenses = async (category = '', sort = 'date_desc') => {
   const params = new URLSearchParams();
@@ -7,7 +8,7 @@ export const fetchExpenses = async (category = '', sort = 'date_desc') => {
 
   const res = await fetch(`${API_BASE}?${params.toString()}`);
   const data = await res.json();
-  
+
   if (!res.ok) {
     throw new Error(data.error || 'Failed to fetch expenses');
   }
