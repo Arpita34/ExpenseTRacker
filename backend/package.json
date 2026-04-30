@@ -1,7 +1,7 @@
 {
   "name": "expense-tracker-backend",
   "version": "1.0.0",
-  "description": "Production-quality expense tracker backend — Node.js + Express + SQLite",
+  "description": "Production-quality expense tracker backend — Node.js + Express + Supabase",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
@@ -9,8 +9,9 @@
     "test": "jest --runInBand --forceExit"
   },
   "dependencies": {
-    "better-sqlite3": "^12.9.0",
+    "@supabase/supabase-js": "^2.105.1",
     "cors": "^2.8.5",
+    "dotenv": "^17.4.2",
     "express": "^4.18.3"
   },
   "devDependencies": {

@@ -1,51 +1,56 @@
 const express = require('express');
 const router = express.Router();
-const db = require('../db');
+const supabase = require('../db');
 const { validateExpense } = require('../middleware/validate');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /expenses  — Create a new expense (idempotent via client_request_id)
 // ─────────────────────────────────────────────────────────────────────────────
-router.post('/', validateExpense, (req, res) => {
+router.post('/', validateExpense, async (req, res) => {
   const { amountCents, category, description, date, client_request_id } = req.body;
 
-  // Idempotency check: if same client_request_id exists, return existing record
-  const existing = db
-    .prepare('SELECT * FROM expenses WHERE client_request_id = ?')
-    .get(client_request_id.trim());
-
-  if (existing) {
-    return res.status(200).json(formatExpense(existing));
-  }
-
-  // Insert new expense
   try {
-    const stmt = db.prepare(`
-      INSERT INTO expenses (amount, category, description, date, client_request_id, created_at)
-      VALUES (?, ?, ?, ?, ?, datetime('now'))
-    `);
+    // Idempotency check: if same client_request_id exists, return existing record
+    const { data: existing, error: findErr } = await supabase
+      .from('expenses')
+      .select('*')
+      .eq('client_request_id', client_request_id.trim())
+      .maybeSingle();
 
-    const result = stmt.run(
-      amountCents,
-      category.trim(),
-      description.trim(),
-      date.trim(),
-      client_request_id.trim()
-    );
+    if (findErr) throw findErr;
 
-    const created = db
-      .prepare('SELECT * FROM expenses WHERE id = ?')
-      .get(result.lastInsertRowid);
+    if (existing) {
+      return res.status(200).json(formatExpense(existing));
+    }
+
+    // Insert new expense
+    const { data: created, error: insertErr } = await supabase
+      .from('expenses')
+      .insert({
+        amount: amountCents,
+        category: category.trim(),
+        description: description.trim(),
+        date: date.trim(),
+        client_request_id: client_request_id.trim(),
+      })
+      .select('*')
+      .single();
+
+    if (insertErr) {
+      // UNIQUE constraint hit (race condition) — return existing
+      if (insertErr.code === '23505') {
+        const { data: dup } = await supabase
+          .from('expenses')
+          .select('*')
+          .eq('client_request_id', client_request_id.trim())
+          .single();
+        return res.status(200).json(formatExpense(dup));
+      }
+      throw insertErr;
+    }
 
     return res.status(201).json(formatExpense(created));
   } catch (err) {
-    // UNIQUE constraint hit (race condition) — return existing
-    if (err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
-      const existing = db
-        .prepare('SELECT * FROM expenses WHERE client_request_id = ?')
-        .get(client_request_id.trim());
-      return res.status(200).json(formatExpense(existing));
-    }
     console.error('POST /expenses error:', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
@@ -55,41 +60,44 @@ router.post('/', validateExpense, (req, res) => {
 // GET /expenses  — List expenses with optional filtering + sorting
 // Query params: ?category=Food&sort=date_desc|date_asc|amount_desc|amount_asc
 // ─────────────────────────────────────────────────────────────────────────────
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   const { category, sort } = req.query;
 
-  const conditions = [];
-  const params = [];
-
-  if (category && category.trim() !== '' && category.trim() !== 'All') {
-    conditions.push('category = ?');
-    params.push(category.trim());
-  }
-
-  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-
-  // Sort options
-  const sortMap = {
-    date_desc:   'date DESC, created_at DESC',
-    date_asc:    'date ASC,  created_at ASC',
-    amount_desc: 'amount DESC, date DESC',
-    amount_asc:  'amount ASC,  date DESC',
-  };
-  const orderBy = sortMap[sort] || 'date DESC, created_at DESC';
-
   try {
-    const expenses = db
-      .prepare(`SELECT * FROM expenses ${whereClause} ORDER BY ${orderBy}`)
-      .all(...params);
+    // Build the select query
+    let query = supabase.from('expenses').select('*');
+
+    // Category filter
+    if (category && category.trim() !== '' && category.trim() !== 'All') {
+      query = query.eq('category', category.trim());
+    }
+
+    // Sort options
+    switch (sort) {
+      case 'date_asc':
+        query = query.order('date', { ascending: true }).order('created_at', { ascending: true });
+        break;
+      case 'amount_desc':
+        query = query.order('amount', { ascending: false }).order('date', { ascending: false });
+        break;
+      case 'amount_asc':
+        query = query.order('amount', { ascending: true }).order('date', { ascending: false });
+        break;
+      case 'date_desc':
+      default:
+        query = query.order('date', { ascending: false }).order('created_at', { ascending: false });
+        break;
+    }
+
+    const { data: expenses, error } = await query;
+    if (error) throw error;
 
     // Aggregate total in cents
-    const totalRow = db
-      .prepare(`SELECT COALESCE(SUM(amount), 0) AS total FROM expenses ${whereClause}`)
-      .get(...params);
+    const total = expenses.reduce((sum, e) => sum + (e.amount || 0), 0);
 
     return res.status(200).json({
       expenses: expenses.map(formatExpense),
-      total: totalRow.total,       // still in cents — let frontend format
+      total,       // still in cents — let frontend format
     });
   } catch (err) {
     console.error('GET /expenses error:', err);
@@ -100,25 +108,37 @@ router.get('/', (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // PUT /expenses/:id  — Update an existing expense
 // ─────────────────────────────────────────────────────────────────────────────
-router.put('/:id', validateExpense, (req, res) => {
+router.put('/:id', validateExpense, async (req, res) => {
   const { amountCents, category, description, date } = req.body;
   const { id } = req.params;
 
   try {
-    const existing = db.prepare('SELECT * FROM expenses WHERE id = ?').get(id);
+    // Check if exists
+    const { data: existing, error: findErr } = await supabase
+      .from('expenses')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (findErr) throw findErr;
     if (!existing) {
       return res.status(404).json({ error: 'Expense not found' });
     }
 
-    const stmt = db.prepare(`
-      UPDATE expenses 
-      SET amount = ?, category = ?, description = ?, date = ?
-      WHERE id = ?
-    `);
+    const { data: updated, error: updateErr } = await supabase
+      .from('expenses')
+      .update({
+        amount: amountCents,
+        category: category.trim(),
+        description: description.trim(),
+        date: date.trim(),
+      })
+      .eq('id', id)
+      .select('*')
+      .single();
 
-    stmt.run(amountCents, category.trim(), description.trim(), date.trim(), id);
-    
-    const updated = db.prepare('SELECT * FROM expenses WHERE id = ?').get(id);
+    if (updateErr) throw updateErr;
+
     return res.status(200).json(formatExpense(updated));
   } catch (err) {
     console.error('PUT /expenses error:', err);
@@ -129,14 +149,22 @@ router.put('/:id', validateExpense, (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // DELETE /expenses/:id  — Delete an existing expense
 // ─────────────────────────────────────────────────────────────────────────────
-router.delete('/:id', (req, res) => {
+router.delete('/:id', async (req, res) => {
   const { id } = req.params;
 
   try {
-    const result = db.prepare('DELETE FROM expenses WHERE id = ?').run(id);
-    if (result.changes === 0) {
+    const { data: deleted, error } = await supabase
+      .from('expenses')
+      .delete()
+      .eq('id', id)
+      .select('id');
+
+    if (error) throw error;
+
+    if (!deleted || deleted.length === 0) {
       return res.status(404).json({ error: 'Expense not found' });
     }
+
     return res.status(204).send();
   } catch (err) {
     console.error('DELETE /expenses error:', err);
