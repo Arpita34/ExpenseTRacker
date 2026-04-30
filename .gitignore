@@ -1,6 +1,6 @@
-*.db
-*.db-wal
-*.db-shm
+*expenses.db
+*expenses.db-wal
+*expenses.db-shm
 node_modules/
 .env
 dist/
