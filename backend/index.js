@@ -23,7 +23,7 @@ app.use(cors({
   }, methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
 }));
-
+app.options("*", cors());
 app.use(express.json());
 
 // ── Root health check (Render uses GET "/" to verify service is up) ───────────
