@@ -127,6 +127,24 @@ router.put('/:id', validateExpense, (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// DELETE /expenses/:id  — Delete an existing expense
+// ─────────────────────────────────────────────────────────────────────────────
+router.delete('/:id', (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const result = db.prepare('DELETE FROM expenses WHERE id = ?').run(id);
+    if (result.changes === 0) {
+      return res.status(404).json({ error: 'Expense not found' });
+    }
+    return res.status(204).send();
+  } catch (err) {
+    console.error('DELETE /expenses error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Helper: format a DB row for API response
 // amount stays in CENTS — client divides by 100 for display
 // ─────────────────────────────────────────────────────────────────────────────

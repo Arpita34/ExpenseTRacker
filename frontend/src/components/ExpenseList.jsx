@@ -1,4 +1,4 @@
-export default function ExpenseList({ expenses, onEdit }) {
+export default function ExpenseList({ expenses, onEdit, onDelete }) {
   if (!expenses || expenses.length === 0) {
     return (
       <div className="empty-state">
@@ -49,6 +49,7 @@ export default function ExpenseList({ expenses, onEdit }) {
             </div>
             <div className="action-buttons" style={{ display: 'flex', gap: '0.5rem' }}>
               <button onClick={() => onEdit(expense)} className="btn-icon" title="Edit">✏️</button>
+              <button onClick={() => onDelete(expense.id)} className="btn-icon delete" title="Delete">🗑️</button>
             </div>
           </div>
         </div>

@@ -42,4 +42,14 @@ export const updateExpense = async (id, expenseData) => {
   return res.json();
 };
 
+export const deleteExpense = async (id) => {
+  const res = await fetch(`${API_BASE}/${id}`, {
+    method: 'DELETE',
+  });
 
+  if (!res.ok) {
+    const data = await res.json();
+    throw new Error(data.error || 'Failed to delete expense');
+  }
+  return true;
+};

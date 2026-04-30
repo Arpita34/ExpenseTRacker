@@ -3,7 +3,7 @@ import ExpenseForm from './components/ExpenseForm';
 import ExpenseList from './components/ExpenseList';
 import FilterBar from './components/FilterBar';
 import ExpenseChart from './components/ExpenseChart';
-import { fetchExpenses } from './api';
+import { fetchExpenses, deleteExpense } from './api';
 
 export default function App() {
   const [expenses, setExpenses] = useState([]);
@@ -45,6 +45,18 @@ export default function App() {
       setLoading(false);
     }
   }, [filter.category, filter.sort, loadAllExpenses]);
+
+  const handleDelete = async (id) => {
+    if (window.confirm('Are you sure you want to delete this expense?')) {
+      try {
+        await deleteExpense(id);
+        if (expenseToEdit && expenseToEdit.id === id) setExpenseToEdit(null);
+        loadExpenses();
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+  };
 
   useEffect(() => {
     loadExpenses();
@@ -114,6 +126,7 @@ export default function App() {
               <ExpenseList 
                 expenses={expenses} 
                 onEdit={setExpenseToEdit} 
+                onDelete={handleDelete}
               />
             )}
           </div>

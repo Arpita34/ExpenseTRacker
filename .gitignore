@@ -1,0 +1,10 @@
+*.db
+*.db-wal
+*.db-shm
+node_modules/
+.env
+dist/
+.vscode/
+
+# Vite/React caches
+/.vite/
